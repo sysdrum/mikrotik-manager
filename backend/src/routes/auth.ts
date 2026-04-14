@@ -1,0 +1,59 @@
+import { Router, Request, Response } from 'express';
+import bcrypt from 'bcryptjs';
+import { query, queryOne } from '../config/database';
+import { signToken, requireAuth } from '../middleware/auth';
+
+const router = Router();
+
+router.post('/login', async (req: Request, res: Response) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+
+  const user = await queryOne<{
+    id: number;
+    username: string;
+    password_hash: string;
+    role: string;
+  }>(`SELECT id, username, password_hash, role FROM users WHERE username = $1`, [username]);
+
+  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  const token = signToken({ userId: user.id, username: user.username, role: user.role });
+  return res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+});
+
+router.get('/me', requireAuth, (req: Request, res: Response) => {
+  res.json({ user: req.user });
+});
+
+router.post('/logout', requireAuth, (_req: Request, res: Response) => {
+  // JWT is stateless; client just discards token
+  res.json({ message: 'Logged out' });
+});
+
+router.put('/password', requireAuth, async (req: Request, res: Response) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Current and new password required' });
+  }
+
+  const user = await queryOne<{ id: number; password_hash: string }>(
+    `SELECT id, password_hash FROM users WHERE id = $1`,
+    [req.user!.userId]
+  );
+
+  if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+
+  const hash = await bcrypt.hash(newPassword, 12);
+  await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, req.user!.userId]);
+  return res.json({ message: 'Password updated' });
+});
+
+export default router;
