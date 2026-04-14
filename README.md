@@ -270,7 +270,7 @@ Default credentials on first run:
 
 ## Enabling the RouterOS API
 
-On each MikroTik device you want to manage, ensure the API service is enabled:
+Typically, API access is enabled on MikroTik devices. However if you can't connect via API, ensure the API service is enabled:
 
 ```
 /ip service enable api
